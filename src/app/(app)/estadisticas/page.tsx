@@ -35,8 +35,6 @@ export default async function EstadisticasPage() {
     })
   )
 
-  const nombreMes = new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
-
   return (
     <EstadisticasClient
       txMes={(txMes ?? []).map(t => ({
@@ -47,7 +45,6 @@ export default async function EstadisticasPage() {
       }))}
       datosMeses={datosMeses}
       cuentas={(cuentas ?? []).map(c => ({ nombre: c.nombre, tipo: c.tipo, saldo_actual: c.saldo_actual }))}
-      nombreMes={nombreMes}
     />
   )
 }

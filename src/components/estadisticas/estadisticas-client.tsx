@@ -1,12 +1,15 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import { formatCOP } from '@/lib/format'
 import { DonutCategorias } from '@/components/dashboard/donut-categorias'
 import { BarrasHorizontales } from '@/components/estadisticas/barras-horizontales'
 import { LineaBalance } from '@/components/estadisticas/linea-balance'
+import { Loader2 } from 'lucide-react'
 
 type GrupoFiltro = 'todos' | 'necesidad' | 'gusto' | 'otro'
+type Periodo = 'mes-actual' | 'mes-anterior' | '3-meses' | '6-meses' | 'año'
 
 interface TxRaw {
   tipo: string
@@ -18,32 +21,118 @@ interface TxRaw {
 interface MesDato { mes: string; balance: number }
 interface CuentaDato { nombre: string; tipo: string; saldo_actual: number | null }
 
-const GRUPOS: { key: GrupoFiltro; label: string; emoji: string }[] = [
-  { key: 'todos',     label: 'Todos',        emoji: '📊' },
-  { key: 'necesidad', label: 'Necesidades',  emoji: '🏠' },
-  { key: 'gusto',     label: 'Gustos',       emoji: '🎉' },
-  { key: 'otro',      label: 'Otros',        emoji: '📦' },
+const PERIODOS: { key: Periodo; label: string }[] = [
+  { key: 'mes-actual',   label: 'Este mes' },
+  { key: 'mes-anterior', label: 'Mes anterior' },
+  { key: '3-meses',      label: '3 meses' },
+  { key: '6-meses',      label: '6 meses' },
+  { key: 'año',          label: 'Este año' },
 ]
 
-const COLORES_ESTABLECIMIENTO = [
+const GRUPOS: { key: GrupoFiltro; label: string; emoji: string }[] = [
+  { key: 'todos',     label: 'Todos',       emoji: '📊' },
+  { key: 'necesidad', label: 'Necesidades', emoji: '🏠' },
+  { key: 'gusto',     label: 'Gustos',      emoji: '🎉' },
+  { key: 'otro',      label: 'Otros',       emoji: '📦' },
+]
+
+const COLORES_EST = [
   '#3b82f6','#8b5cf6','#f59e0b','#ef4444','#10b981',
   '#6366f1','#f97316','#06b6d4','#84cc16','#ec4899',
 ]
+
+function fmtDate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function getRango(periodo: Periodo): { inicio: string; fin: string; label: string; dias: number } {
+  const now = new Date()
+  const hoy = fmtDate(now)
+
+  function diasEntre(ini: string, fin: string) {
+    const start = new Date(ini + 'T00:00:00')
+    const end   = new Date(Math.min(new Date(fin + 'T00:00:00').getTime(), now.getTime()))
+    return Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+  }
+
+  switch (periodo) {
+    case 'mes-actual': {
+      const inicio = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+      const fin    = fmtDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+      const label  = now.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
+      return { inicio, fin, label, dias: now.getDate() }
+    }
+    case 'mes-anterior': {
+      const d      = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const inicio = fmtDate(d)
+      const fin    = fmtDate(new Date(d.getFullYear(), d.getMonth() + 1, 0))
+      const label  = d.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
+      return { inicio, fin, label, dias: diasEntre(inicio, fin) }
+    }
+    case '3-meses': {
+      const d      = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+      const inicio = fmtDate(d)
+      return { inicio, fin: hoy, label: 'Últimos 3 meses', dias: diasEntre(inicio, hoy) }
+    }
+    case '6-meses': {
+      const d      = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+      const inicio = fmtDate(d)
+      return { inicio, fin: hoy, label: 'Últimos 6 meses', dias: diasEntre(inicio, hoy) }
+    }
+    case 'año': {
+      const inicio = `${now.getFullYear()}-01-01`
+      return { inicio, fin: hoy, label: `Año ${now.getFullYear()}`, dias: diasEntre(inicio, hoy) }
+    }
+  }
+}
 
 interface Props {
   txMes: TxRaw[]
   datosMeses: MesDato[]
   cuentas: CuentaDato[]
-  nombreMes: string
 }
 
-export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Props) {
-  const [grupo, setGrupo] = useState<GrupoFiltro>('todos')
+export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Props) {
+  const [grupo,     setGrupo]   = useState<GrupoFiltro>('todos')
+  const [periodo,   setPeriodo] = useState<Periodo>('mes-actual')
+  const [txData,    setTxData]  = useState<TxRaw[]>(initialTx)
+  const [loading,   setLoading] = useState(false)
+
+  const { inicio, fin, label: periodoLabel, dias } = useMemo(() => getRango(periodo), [periodo])
+
+  // Re-fetch cuando cambia el periodo (excepto "mes-actual" que ya viene del servidor)
+  useEffect(() => {
+    if (periodo === 'mes-actual') {
+      setTxData(initialTx)
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    const supabase = createClient()
+    supabase
+      .from('transactions')
+      .select('tipo, monto, establecimiento, categories(nombre, color, grupo)')
+      .gte('fecha', inicio)
+      .lte('fecha', fin)
+      .then(({ data }) => {
+        if (cancelled) return
+        setTxData(
+          (data ?? []).map(t => ({
+            tipo: t.tipo,
+            monto: t.monto,
+            establecimiento: t.establecimiento ?? null,
+            categories: (t.categories as unknown) as { nombre: string; color: string; grupo: string } | null,
+          }))
+        )
+        setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [periodo, inicio, fin, initialTx])
 
   const { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento } =
     useMemo(() => {
-      const egresos = txMes.filter(t => t.tipo === 'egreso')
-      const ingresos = txMes.filter(t => t.tipo === 'ingreso')
+      const egresos  = txData.filter(t => t.tipo === 'egreso')
+      const ingresos = txData.filter(t => t.tipo === 'ingreso')
 
       const egresosFiltrados = grupo === 'todos'
         ? egresos
@@ -53,7 +142,7 @@ export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Pr
       const totalEgresos  = egresosFiltrados.reduce((s, t) => s + t.monto, 0)
       const tasaAhorro    = totalIngresos > 0 ? ((totalIngresos - totalEgresos) / totalIngresos * 100) : 0
 
-      // Egresos por categoría
+      // Por categoría
       const mapCat: Record<string, { valor: number; color: string }> = {}
       for (const t of egresosFiltrados) {
         const key   = t.categories?.nombre ?? 'Sin categoría'
@@ -64,17 +153,17 @@ export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Pr
         .map(([nombre, { valor, color }]) => ({ nombre, valor, color }))
         .sort((a, b) => b.valor - a.valor)
 
-      // Egresos por grupo
+      // Por grupo (dona Necesidades vs Gustos)
+      const GRUPO_META = {
+        necesidad: { label: 'Necesidades 🏠', color: '#3b82f6' },
+        gusto:     { label: 'Gustos 🎉',      color: '#a855f7' },
+        otro:      { label: 'Otros 📦',        color: '#6b7280' },
+      }
       const mapGrupo: Record<string, number> = {}
       for (const t of egresos) {
         if (grupo !== 'todos' && (t.categories?.grupo ?? 'otro') !== grupo) continue
         const g = t.categories?.grupo ?? 'otro'
         mapGrupo[g] = (mapGrupo[g] ?? 0) + t.monto
-      }
-      const GRUPO_META = {
-        necesidad: { label: 'Necesidades 🏠', color: '#3b82f6' },
-        gusto:     { label: 'Gustos 🎉',       color: '#a855f7' },
-        otro:      { label: 'Otros 📦',         color: '#6b7280' },
       }
       const datosGrupo = Object.entries(mapGrupo)
         .filter(([, v]) => v > 0)
@@ -84,7 +173,7 @@ export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Pr
           color:  GRUPO_META[k as keyof typeof GRUPO_META]?.color ?? '#6b7280',
         }))
 
-      // Egresos por establecimiento (top 10)
+      // Por establecimiento (top 10)
       const mapEst: Record<string, number> = {}
       for (const t of egresosFiltrados) {
         const est = t.establecimiento?.trim()
@@ -94,25 +183,39 @@ export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Pr
       const datosEstablecimiento = Object.entries(mapEst)
         .sort(([, a], [, b]) => b - a)
         .slice(0, 10)
-        .map(([nombre, valor], i) => ({
-          nombre,
-          valor,
-          color: COLORES_ESTABLECIMIENTO[i % COLORES_ESTABLECIMIENTO.length],
-        }))
+        .map(([nombre, valor], i) => ({ nombre, valor, color: COLORES_EST[i % COLORES_EST.length] }))
 
       return { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento }
-    }, [txMes, grupo])
+    }, [txData, grupo])
 
   const totalSaldos = cuentas.reduce((s, c) => s + (c.saldo_actual ?? 0), 0)
+  const grupoLabel  = GRUPOS.find(g => g.key === grupo)?.label ?? ''
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-5">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Estadísticas</h1>
-        <p className="text-sm text-gray-500 capitalize">{nombreMes}</p>
+        <p className="text-sm text-gray-500 capitalize">{periodoLabel}</p>
       </div>
 
-      {/* Filtro por grupo */}
+      {/* Selector de periodo */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        {PERIODOS.map(p => (
+          <button
+            key={p.key}
+            onClick={() => setPeriodo(p.key)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors border ${
+              periodo === p.key
+                ? 'bg-gray-900 text-white border-gray-900'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Selector de grupo */}
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {GRUPOS.map(g => (
           <button
@@ -130,11 +233,19 @@ export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Pr
         ))}
       </div>
 
+      {/* Loader overlay */}
+      {loading && (
+        <div className="flex items-center justify-center gap-2 py-2 text-sm text-gray-400">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Cargando {periodoLabel.toLowerCase()}…
+        </div>
+      )}
+
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <p className="text-xs text-gray-400">
-            {grupo === 'todos' ? 'Tasa de ahorro' : `Ahorro vs ${GRUPOS.find(g2 => g2.key === grupo)?.label}`}
+            {grupo === 'todos' ? 'Tasa de ahorro' : `Ahorro vs ${grupoLabel}`}
           </p>
           <p className={`text-2xl font-bold mt-1 ${tasaAhorro >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
             {tasaAhorro.toFixed(1)}%
@@ -142,19 +253,21 @@ export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Pr
           <p className="text-xs text-gray-400 mt-1">de los ingresos</p>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-          <p className="text-xs text-gray-400">Gasto{grupo !== 'todos' ? ` en ${GRUPOS.find(g2 => g2.key === grupo)?.label.toLowerCase()}` : ''}/día</p>
-          <p className="text-2xl font-bold mt-1 text-gray-800">
-            {formatCOP(totalEgresos / new Date().getDate())}
+          <p className="text-xs text-gray-400">
+            Gasto{grupo !== 'todos' ? ` en ${grupoLabel.toLowerCase()}` : ''}/día
           </p>
-          <p className="text-xs text-gray-400 mt-1">en lo que va del mes</p>
+          <p className="text-2xl font-bold mt-1 text-gray-800">
+            {formatCOP(totalEgresos / dias)}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">{dias} días · {formatCOP(totalEgresos)} total</p>
         </div>
       </div>
 
-      {/* Necesidades vs Gustos (solo visible cuando filtro = todos) */}
+      {/* Necesidades vs Gustos (solo en vista "todos") */}
       {grupo === 'todos' && datosGrupo.length > 0 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-800 text-sm mb-1">Necesidades vs Gustos</h2>
-          <p className="text-xs text-gray-400 mb-4">Distribución de egresos del mes</p>
+          <p className="text-xs text-gray-400 mb-4 capitalize">{periodoLabel}</p>
           <DonutCategorias datos={datosGrupo} />
           <div className="grid grid-cols-2 gap-2 mt-3">
             {datosGrupo.map(g => (
@@ -174,12 +287,12 @@ export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Pr
       {datosCat.length > 0 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-800 text-sm mb-1">Egresos por categoría</h2>
-          <p className="text-xs text-gray-400 mb-4 capitalize">{nombreMes}</p>
+          <p className="text-xs text-gray-400 mb-4 capitalize">{periodoLabel}</p>
           <BarrasHorizontales datos={datosCat} />
         </div>
       )}
 
-      {/* Dona categorías */}
+      {/* Dona de distribución */}
       {datosCat.length > 0 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-800 text-sm mb-1">Distribución de egresos</h2>
@@ -190,11 +303,9 @@ export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Pr
       {/* Por establecimiento */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
         <h2 className="font-semibold text-gray-800 text-sm mb-1">Por establecimiento</h2>
-        <p className="text-xs text-gray-400 mb-4">Dónde más gastas este mes</p>
+        <p className="text-xs text-gray-400 mb-4 capitalize">Dónde más gastas · {periodoLabel}</p>
         {datosEstablecimiento.length === 0 ? (
-          <p className="text-center text-sm text-gray-400 py-6">
-            Sin establecimientos registrados este mes
-          </p>
+          <p className="text-center text-sm text-gray-400 py-6">Sin establecimientos registrados</p>
         ) : (
           <>
             <BarrasHorizontales datos={datosEstablecimiento} />
@@ -213,14 +324,14 @@ export function EstadisticasClient({ txMes, datosMeses, cuentas, nombreMes }: Pr
         )}
       </div>
 
-      {/* Línea de balance */}
+      {/* Línea de balance — siempre últimos 6 meses */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
         <h2 className="font-semibold text-gray-800 text-sm mb-1">Tendencia del balance</h2>
         <p className="text-xs text-gray-400 mb-3">Últimos 6 meses</p>
         <LineaBalance datos={datosMeses} />
       </div>
 
-      {/* Saldos cuentas */}
+      {/* Saldos por cuenta */}
       {cuentas.length > 0 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-800 text-sm mb-3">Saldo por cuenta</h2>
