@@ -34,7 +34,19 @@ export interface Categoria {
   color: string
   icono: string | null
   grupo: GrupoCategoria
+  macro_category_id: string | null
+  macro_categories?: MacroCategoria
   es_predeterminada: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface MacroCategoria {
+  id: string
+  user_id: string
+  nombre: string
+  color: string
+  icono: string | null
   created_at: string
   updated_at: string
 }
