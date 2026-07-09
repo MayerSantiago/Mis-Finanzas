@@ -4,6 +4,14 @@ export type TipoMovimiento = 'ingreso' | 'egreso'
 export type TipoTasa = 'EA' | 'EM' | 'NM'
 export type EstadoDeuda = 'activa' | 'pagada'
 export type TipoAbono = 'capital' | 'interes' | 'mixto'
+export type PersonaGrupo = 'personal' | 'familia' | 'amigos' | 'novia'
+
+export const PERSONA_GRUPOS: { key: PersonaGrupo; label: string; emoji: string; color: string }[] = [
+  { key: 'personal', label: 'Personal',  emoji: '👤', color: '#10b981' },
+  { key: 'familia',  label: 'Familia',   emoji: '👨‍👩‍👧', color: '#3b82f6' },
+  { key: 'amigos',   label: 'Amigos',    emoji: '👥', color: '#f59e0b' },
+  { key: 'novia',    label: 'Novia',     emoji: '💕', color: '#ec4899' },
+]
 
 export interface Cuenta {
   id: string
@@ -40,6 +48,7 @@ export interface Transaccion {
   category_id: string | null
   account_id: string | null
   establecimiento: string | null
+  persona_grupo: PersonaGrupo | null
   rubro: string | null
   detalle: string | null
   created_at: string

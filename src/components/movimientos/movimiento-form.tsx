@@ -5,7 +5,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
-import type { Categoria, Cuenta, Transaccion, TipoMovimiento } from '@/types'
+import type { Categoria, Cuenta, Transaccion, TipoMovimiento, PersonaGrupo } from '@/types'
+import { PERSONA_GRUPOS } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -20,6 +21,7 @@ const schema = z.object({
   category_id:     z.string().optional(),
   account_id:      z.string().optional(),
   establecimiento: z.string().optional(),
+  persona_grupo:   z.enum(['personal', 'familia', 'amigos', 'novia']).optional(),
   detalle:         z.string().optional(),
 })
 
@@ -47,6 +49,7 @@ export function MovimientoForm({ open, onClose, onSaved, categorias, cuentas, ed
   const tipoWatch       = watch('tipo')
   const categoryIdWatch = watch('category_id')
   const accountIdWatch  = watch('account_id')
+  const personaWatch    = watch('persona_grupo')
   const categoriasFiltradas = categorias.filter(c => c.tipo === tipoWatch)
 
   useEffect(() => {
@@ -59,6 +62,7 @@ export function MovimientoForm({ open, onClose, onSaved, categorias, cuentas, ed
           category_id: editando.category_id ?? undefined,
           account_id: editando.account_id ?? undefined,
           establecimiento: editando.establecimiento ?? '',
+          persona_grupo: (editando.persona_grupo ?? undefined) as PersonaGrupo | undefined,
           detalle: editando.detalle ?? '',
         })
       } else {
@@ -81,6 +85,7 @@ export function MovimientoForm({ open, onClose, onSaved, categorias, cuentas, ed
       category_id: data.category_id || null,
       account_id: data.account_id || null,
       establecimiento: data.establecimiento || null,
+      persona_grupo: data.persona_grupo || null,
       detalle: data.detalle || null,
     }
 
@@ -183,6 +188,29 @@ export function MovimientoForm({ open, onClose, onSaved, categorias, cuentas, ed
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Persona / Grupo */}
+          <div className="space-y-1.5">
+            <Label>Persona / Grupo</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {PERSONA_GRUPOS.map(g => (
+                <button
+                  key={g.key}
+                  type="button"
+                  onClick={() => setValue('persona_grupo', personaWatch === g.key ? undefined : g.key)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                    personaWatch === g.key
+                      ? 'text-white border-transparent'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  }`}
+                  style={personaWatch === g.key ? { backgroundColor: g.color } : {}}
+                >
+                  <span>{g.emoji}</span>
+                  <span>{g.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Establecimiento */}

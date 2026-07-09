@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatCOP } from '@/lib/format'
-import type { Transaccion, Categoria, Cuenta, TipoMovimiento } from '@/types'
+import type { Transaccion, Categoria, Cuenta, TipoMovimiento, PersonaGrupo } from '@/types'
+import { PERSONA_GRUPOS } from '@/types'
 import { MovimientoForm } from './movimiento-form'
 import { Button } from '@/components/ui/button'
 import {
@@ -40,7 +41,8 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
   const [{ anio, mes }, setMes] = useState(getMesActual)
   const [transacciones, setTransacciones] = useState(initial)
   const [filtradas, setFiltradas] = useState(initial)
-  const [filtroTipo, setFiltroTipo] = useState<TipoMovimiento | 'todos'>('todos')
+  const [filtroTipo,    setFiltroTipo]    = useState<TipoMovimiento | 'todos'>('todos')
+  const [filtroPersona, setFiltroPersona] = useState<PersonaGrupo | 'todos'>('todos')
   const [formOpen, setFormOpen] = useState(false)
   const [editando, setEditando] = useState<Transaccion | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -59,9 +61,11 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
       const [a, m] = t.fecha.split('-').map(Number)
       return a === anio && m === mes + 1
     })
-    if (filtroTipo !== 'todos') list = list.filter(t => t.tipo === filtroTipo)
+
+    if (filtroTipo    !== 'todos') list = list.filter(t => t.tipo === filtroTipo)
+    if (filtroPersona !== 'todos') list = list.filter(t => t.persona_grupo === filtroPersona)
     setFiltradas(list.sort((a, b) => b.fecha.localeCompare(a.fecha)))
-  }, [transacciones, anio, mes, filtroTipo])
+  }, [transacciones, anio, mes, filtroTipo, filtroPersona])
 
   // Cargar mes nuevo desde Supabase cuando cambia el mes
   const cargarMes = useCallback(async (a: number, m: number) => {
@@ -152,7 +156,7 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
       </div>
 
       {/* Filtro tipo */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-2">
         {(['todos', 'egreso', 'ingreso'] as const).map(f => (
           <button
             key={f}
@@ -166,6 +170,28 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
               }`}
           >
             {f === 'todos' ? 'Todos' : f === 'egreso' ? 'Egresos' : 'Ingresos'}
+          </button>
+        ))}
+      </div>
+
+      {/* Filtro persona */}
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <button
+          onClick={() => setFiltroPersona('todos')}
+          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filtroPersona === 'todos' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+        >
+          👥 Todos
+        </button>
+        {PERSONA_GRUPOS.map(g => (
+          <button
+            key={g.key}
+            onClick={() => setFiltroPersona(g.key)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
+              filtroPersona === g.key ? 'text-white border-transparent' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+            }`}
+            style={filtroPersona === g.key ? { backgroundColor: g.color } : {}}
+          >
+            {g.emoji} {g.label}
           </button>
         ))}
       </div>
@@ -202,9 +228,22 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
                         <p className="font-medium text-gray-800 text-sm truncate">
                           {t.establecimiento || cat?.nombre || (t.tipo === 'ingreso' ? 'Ingreso' : 'Egreso')}
                         </p>
-                        <p className="text-xs text-gray-400 truncate">
-                          {cat?.nombre}{cat && cuenta ? ' · ' : ''}{cuenta?.nombre}
-                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-xs text-gray-400 truncate">
+                            {cat?.nombre}{cat && cuenta ? ' · ' : ''}{cuenta?.nombre}
+                          </p>
+                          {t.persona_grupo && (() => {
+                            const pg = PERSONA_GRUPOS.find(g => g.key === t.persona_grupo)
+                            return pg ? (
+                              <span
+                                className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border shrink-0"
+                                style={{ color: pg.color, backgroundColor: pg.color + '15', borderColor: pg.color + '40' }}
+                              >
+                                {pg.emoji} {pg.label}
+                              </span>
+                            ) : null
+                          })()}
+                        </div>
                       </div>
 
                       <div className="text-right shrink-0">

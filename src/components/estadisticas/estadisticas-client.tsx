@@ -8,6 +8,7 @@ import { BarrasHorizontales } from '@/components/estadisticas/barras-horizontale
 import { BarrasMensuales } from '@/components/dashboard/barras-mensuales'
 import { LineaBalance } from '@/components/estadisticas/linea-balance'
 import { Loader2, ChevronDown, X, TrendingUp, TrendingDown, Wallet, SlidersHorizontal } from 'lucide-react'
+import { PERSONA_GRUPOS } from '@/types'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -20,6 +21,7 @@ interface TxRaw {
   monto: number
   fecha: string
   establecimiento: string | null
+  persona_grupo: string | null
   categories: { nombre: string; color: string; grupo: string } | null
 }
 
@@ -109,7 +111,8 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
   const [presetActivo, setPresetActivo] = useState<string | null>('mes')
   const [txData,       setTxData]       = useState<TxRaw[]>(initialTx)
   const [loading,      setLoading]      = useState(false)
-  const [sidebarOpen,  setSidebarOpen]  = useState(false) // mobile toggle
+  const [sidebarOpen,  setSidebarOpen]  = useState(false)
+  const [personaFiltro, setPersonaFiltro] = useState<string | null>(null)
 
   const isDefault = fechaInicio === defaultInicio && fechaFin === defaultFin
 
@@ -120,13 +123,14 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
     let cancelled = false
     supabase
       .from('transactions')
-      .select('tipo, monto, fecha, establecimiento, categories(nombre, color, grupo)')
+      .select('tipo, monto, fecha, establecimiento, persona_grupo, categories(nombre, color, grupo)')
       .gte('fecha', ini).lte('fecha', fin)
       .then(({ data }) => {
         if (cancelled) return
         setTxData((data ?? []).map(t => ({
           tipo: t.tipo, monto: t.monto, fecha: t.fecha,
           establecimiento: t.establecimiento ?? null,
+          persona_grupo: (t as unknown as { persona_grupo: string | null }).persona_grupo ?? null,
           categories: (t.categories as unknown) as { nombre: string; color: string; grupo: string } | null,
         })))
         setLoading(false)
@@ -185,19 +189,23 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
   const {
     totalIngresos, totalEgresos, tasaAhorro,
     datosCat, datosGrupo, datosEstablecimiento,
-    datosChart, datosDiarios, datosGrupoChart,
+    datosChart, datosDiarios, datosGrupoChart, datosPersona,
   } = useMemo(() => {
     const egresos  = txData.filter(t => t.tipo === 'egreso')
     const ingresos = txData.filter(t => t.tipo === 'ingreso')
 
     function matchFiltros(t: TxRaw) {
-      const matchGrupo = grupo === 'todos' || (t.categories?.grupo ?? 'otro') === grupo
-      const matchCat   = categorias.length === 0 || categorias.includes(t.categories?.nombre ?? '')
-      return matchGrupo && matchCat
+      const matchGrupo   = grupo === 'todos' || (t.categories?.grupo ?? 'otro') === grupo
+      const matchCat     = categorias.length === 0 || categorias.includes(t.categories?.nombre ?? '')
+      const matchPersona = personaFiltro === null || t.persona_grupo === personaFiltro
+      return matchGrupo && matchCat && matchPersona
     }
 
-    const egresosFiltrados = egresos.filter(matchFiltros)
-    const totalIngresos = ingresos.reduce((s, t) => s + t.monto, 0)
+    const matchPersonaOnly = (t: TxRaw) => personaFiltro === null || t.persona_grupo === personaFiltro
+
+    const egresosFiltrados  = egresos.filter(matchFiltros)
+    const ingresosFiltrados = ingresos.filter(matchPersonaOnly)
+    const totalIngresos = ingresosFiltrados.reduce((s, t) => s + t.monto, 0)
     const totalEgresos  = egresosFiltrados.reduce((s, t) => s + t.monto, 0)
     const tasaAhorro    = totalIngresos > 0 ? ((totalIngresos - totalEgresos) / totalIngresos * 100) : 0
 
@@ -270,6 +278,20 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
       datosChart = Object.entries(mapMes).sort(([a],[b]) => a.localeCompare(b)).map(([,v]) => v)
     }
 
+    // Egresos por grupo de persona
+    const mapPersona: Record<string, number> = {}
+    for (const t of egresosFiltrados) {
+      const pg = t.persona_grupo ?? '_sin'
+      mapPersona[pg] = (mapPersona[pg] ?? 0) + t.monto
+    }
+    const datosPersona = Object.entries(mapPersona)
+      .filter(([, v]) => v > 0)
+      .map(([k, valor]) => {
+        const meta = PERSONA_GRUPOS.find(g => g.key === k)
+        return { nombre: meta ? `${meta.emoji} ${meta.label}` : 'Sin asignar', valor, color: meta?.color ?? '#9ca3af' }
+      })
+      .sort((a, b) => b.valor - a.valor)
+
     // Egresos por tipo de gasto (necesidad/gusto/otro) por periodo
     const mapGrupoChart: Record<string, { periodo: string; necesidad: number; gusto: number; otro: number; _order: string }> = {}
     for (const t of egresosFiltrados) {
@@ -296,11 +318,11 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
       .sort((a, b) => a._order.localeCompare(b._order))
       .map(({ periodo, necesidad, gusto, otro }) => ({ periodo, necesidad, gusto, otro }))
 
-    return { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento, datosChart, datosDiarios, datosGrupoChart }
-  }, [txData, grupo, categorias, granularity])
+    return { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento, datosChart, datosDiarios, datosGrupoChart, datosPersona }
+  }, [txData, grupo, categorias, granularity, personaFiltro])
 
   const totalSaldos = cuentas.reduce((s, c) => s + (c.saldo_actual ?? 0), 0)
-  const hayFiltros  = grupo !== 'todos' || categorias.length > 0
+  const hayFiltros  = grupo !== 'todos' || categorias.length > 0 || personaFiltro !== null
   const label       = periodoLabel(fechaInicio, fechaFin)
   const granLabel   = granularity === 'dia' ? 'día' : granularity === 'semana' ? 'semana' : 'mes'
 
@@ -356,6 +378,35 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
         {!presetActivo && (
           <p className="text-[10px] text-emerald-600 mt-1.5">{dias} día{dias !== 1 ? 's' : ''} seleccionado{dias !== 1 ? 's' : ''}</p>
         )}
+      </div>
+
+      {/* Personas */}
+      <div>
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Persona / Grupo</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            onClick={() => setPersonaFiltro(null)}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+              personaFiltro === null
+                ? 'bg-gray-900 text-white border-gray-900'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            👥 Todos
+          </button>
+          {PERSONA_GRUPOS.map(g => (
+            <button
+              key={g.key}
+              onClick={() => setPersonaFiltro(personaFiltro === g.key ? null : g.key)}
+              className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                personaFiltro === g.key ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+              }`}
+              style={personaFiltro === g.key ? { backgroundColor: g.color } : {}}
+            >
+              {g.emoji} {g.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Grupo */}
@@ -533,6 +584,15 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
           {/* ── Filtros activos ── */}
           {hayFiltros && (
             <div className="flex flex-wrap gap-2">
+              {personaFiltro !== null && (() => {
+                const pg = PERSONA_GRUPOS.find(g => g.key === personaFiltro)
+                return pg ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-white text-xs rounded-full border border-transparent" style={{ backgroundColor: pg.color }}>
+                    {pg.emoji} {pg.label}
+                    <button onClick={() => setPersonaFiltro(null)}><X className="h-3 w-3" /></button>
+                  </span>
+                ) : null
+              })()}
               {grupo !== 'todos' && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs rounded-full border border-emerald-200">
                   {GRUPOS.find(g => g.key === grupo)?.emoji} {GRUPOS.find(g => g.key === grupo)?.label}
@@ -621,6 +681,42 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
               </div>
             )}
           </div>
+
+          {/* ── Egresos por persona ── */}
+          {datosPersona.length > 0 && (
+            <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="font-semibold text-gray-800 text-sm">Egresos por persona / grupo</h2>
+                <span className="text-xs text-gray-400">{label}</span>
+              </div>
+              <p className="text-xs text-gray-400 mb-4">
+                {formatCOP(datosPersona.reduce((s, d) => s + d.valor, 0))} total
+              </p>
+              <div className="space-y-3">
+                {datosPersona.map(d => {
+                  const total = datosPersona.reduce((s, x) => s + x.valor, 0)
+                  const pct   = total > 0 ? (d.valor / total) * 100 : 0
+                  return (
+                    <div key={d.nombre}>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-gray-700 font-medium">{d.nombre}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-400">{pct.toFixed(0)}%</span>
+                          <span className="font-semibold text-gray-800">{formatCOP(d.valor)}</span>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${pct}%`, backgroundColor: d.color }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           {/* ── Dona distribución + Necesidades vs Gustos ── */}
           {datosCat.length > 1 && (
