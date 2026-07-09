@@ -123,7 +123,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
     let cancelled = false
     supabase
       .from('transactions')
-      .select('tipo, monto, fecha, establecimiento, persona_grupo, categories(nombre, color, grupo)')
+      .select('*, categories(nombre, color, grupo)')
       .gte('fecha', ini).lte('fecha', fin)
       .then(({ data }) => {
         if (cancelled) return
