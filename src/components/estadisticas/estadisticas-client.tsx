@@ -22,7 +22,10 @@ interface TxRaw {
   fecha: string
   establecimiento: string | null
   persona_grupo: string | null
-  categories: { nombre: string; color: string; grupo: string } | null
+  categories: {
+    nombre: string; color: string; grupo: string
+    macro_categories: { nombre: string; color: string; icono: string | null } | null
+  } | null
 }
 
 interface MesDato   { mes: string; balance: number }
@@ -111,8 +114,9 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
   const [presetActivo, setPresetActivo] = useState<string | null>('mes')
   const [txData,       setTxData]       = useState<TxRaw[]>(initialTx)
   const [loading,      setLoading]      = useState(false)
-  const [sidebarOpen,  setSidebarOpen]  = useState(false)
+  const [sidebarOpen,   setSidebarOpen]   = useState(false)
   const [personaFiltro, setPersonaFiltro] = useState<string | null>(null)
+  const [macroFiltro,   setMacroFiltro]   = useState<string | null>(null)
 
   const isDefault = fechaInicio === defaultInicio && fechaFin === defaultFin
 
@@ -123,7 +127,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
     let cancelled = false
     supabase
       .from('transactions')
-      .select('*, categories(nombre, color, grupo)')
+      .select('*, categories(nombre, color, grupo, macro_categories(nombre, color, icono))')
       .gte('fecha', ini).lte('fecha', fin)
       .then(({ data }) => {
         if (cancelled) return
@@ -131,7 +135,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
           tipo: t.tipo, monto: t.monto, fecha: t.fecha,
           establecimiento: t.establecimiento ?? null,
           persona_grupo: (t as unknown as { persona_grupo: string | null }).persona_grupo ?? null,
-          categories: (t.categories as unknown) as { nombre: string; color: string; grupo: string } | null,
+          categories: (t.categories as unknown) as TxRaw['categories'],
         })))
         setLoading(false)
       })
@@ -182,6 +186,16 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
     return Array.from(seen.values()).sort((a, b) => a.nombre.localeCompare(b.nombre))
   }, [txData, grupo])
 
+  const macrosDisponibles = useMemo(() => {
+    const seen = new Map<string, { nombre: string; color: string; icono: string | null }>()
+    for (const t of txData) {
+      if (t.tipo !== 'egreso') continue
+      const mc = t.categories?.macro_categories
+      if (mc && !seen.has(mc.nombre)) seen.set(mc.nombre, mc)
+    }
+    return Array.from(seen.values()).sort((a, b) => a.nombre.localeCompare(b.nombre))
+  }, [txData])
+
   function toggleCategoria(nombre: string) {
     setCategorias(prev => prev.includes(nombre) ? prev.filter(c => c !== nombre) : [...prev, nombre])
   }
@@ -189,7 +203,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
   const {
     totalIngresos, totalEgresos, tasaAhorro,
     datosCat, datosGrupo, datosEstablecimiento,
-    datosChart, datosDiarios, datosGrupoChart, datosPersona,
+    datosChart, datosDiarios, datosGrupoChart, datosPersona, datosMacro,
   } = useMemo(() => {
     const egresos  = txData.filter(t => t.tipo === 'egreso')
     const ingresos = txData.filter(t => t.tipo === 'ingreso')
@@ -198,10 +212,15 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
       const matchGrupo   = grupo === 'todos' || (t.categories?.grupo ?? 'otro') === grupo
       const matchCat     = categorias.length === 0 || categorias.includes(t.categories?.nombre ?? '')
       const matchPersona = personaFiltro === null || t.persona_grupo === personaFiltro
-      return matchGrupo && matchCat && matchPersona
+      const matchMacro   = macroFiltro === null || (t.categories?.macro_categories?.nombre ?? null) === macroFiltro
+      return matchGrupo && matchCat && matchPersona && matchMacro
     }
 
-    const matchPersonaOnly = (t: TxRaw) => personaFiltro === null || t.persona_grupo === personaFiltro
+    const matchPersonaOnly = (t: TxRaw) => {
+      const matchPersona = personaFiltro === null || t.persona_grupo === personaFiltro
+      const matchMacro   = macroFiltro === null || (t.categories?.macro_categories?.nombre ?? null) === macroFiltro
+      return matchPersona && matchMacro
+    }
 
     const egresosFiltrados  = egresos.filter(matchFiltros)
     const ingresosFiltrados = ingresos.filter(matchPersonaOnly)
@@ -278,6 +297,34 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
       datosChart = Object.entries(mapMes).sort(([a],[b]) => a.localeCompare(b)).map(([,v]) => v)
     }
 
+    // Egresos por macro categoría con detalle de sub-categorías
+    const mapMacro: Record<string, {
+      nombre: string; color: string; icono: string | null; valor: number
+      cats: Record<string, { nombre: string; color: string; valor: number }>
+    }> = {}
+    for (const t of egresosFiltrados) {
+      const mc     = t.categories?.macro_categories
+      const key    = mc?.nombre ?? '__sin__'
+      const catKey = t.categories?.nombre ?? 'Sin categoría'
+      if (!mapMacro[key]) mapMacro[key] = {
+        nombre: mc?.nombre ?? 'Sin clasificar',
+        color:  mc?.color  ?? '#9ca3af',
+        icono:  mc?.icono  ?? null,
+        valor: 0, cats: {},
+      }
+      mapMacro[key].valor += t.monto
+      if (!mapMacro[key].cats[catKey]) mapMacro[key].cats[catKey] = { nombre: catKey, color: t.categories?.color ?? '#9ca3af', valor: 0 }
+      mapMacro[key].cats[catKey].valor += t.monto
+    }
+    const datosMacro = Object.values(mapMacro)
+      .filter(m => m.valor > 0)
+      .sort((a, b) => b.valor - a.valor)
+      .map(m => ({
+        nombre: m.icono ? `${m.icono} ${m.nombre}` : m.nombre,
+        valor: m.valor, color: m.color,
+        cats: Object.values(m.cats).sort((a, b) => b.valor - a.valor),
+      }))
+
     // Egresos por grupo de persona
     const mapPersona: Record<string, number> = {}
     for (const t of egresosFiltrados) {
@@ -318,11 +365,11 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
       .sort((a, b) => a._order.localeCompare(b._order))
       .map(({ periodo, necesidad, gusto, otro }) => ({ periodo, necesidad, gusto, otro }))
 
-    return { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento, datosChart, datosDiarios, datosGrupoChart, datosPersona }
-  }, [txData, grupo, categorias, granularity, personaFiltro])
+    return { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento, datosChart, datosDiarios, datosGrupoChart, datosPersona, datosMacro }
+  }, [txData, grupo, categorias, granularity, personaFiltro, macroFiltro])
 
   const totalSaldos = cuentas.reduce((s, c) => s + (c.saldo_actual ?? 0), 0)
-  const hayFiltros  = grupo !== 'todos' || categorias.length > 0 || personaFiltro !== null
+  const hayFiltros  = grupo !== 'todos' || categorias.length > 0 || personaFiltro !== null || macroFiltro !== null
   const label       = periodoLabel(fechaInicio, fechaFin)
   const granLabel   = granularity === 'dia' ? 'día' : granularity === 'semana' ? 'semana' : 'mes'
 
@@ -408,6 +455,32 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
           ))}
         </div>
       </div>
+
+      {/* Macro categoría */}
+      {macrosDisponibles.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Macro categoría</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setMacroFiltro(null)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border ${macroFiltro === null ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
+            >
+              Todas
+            </button>
+            {macrosDisponibles.map(m => (
+              <button
+                key={m.nombre}
+                onClick={() => setMacroFiltro(macroFiltro === m.nombre ? null : m.nombre)}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border ${macroFiltro === m.nombre ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
+                style={macroFiltro === m.nombre ? { backgroundColor: m.color } : {}}
+              >
+                {m.icono && <span>{m.icono}</span>}
+                {m.nombre}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Grupo */}
       <div>
@@ -584,6 +657,16 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
           {/* ── Filtros activos ── */}
           {hayFiltros && (
             <div className="flex flex-wrap gap-2">
+              {macroFiltro !== null && (() => {
+                const m = macrosDisponibles.find(x => x.nombre === macroFiltro)
+                return (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 text-white text-xs rounded-full"
+                    style={{ backgroundColor: m?.color ?? '#6b7280' }}>
+                    {m?.icono} {macroFiltro}
+                    <button onClick={() => setMacroFiltro(null)}><X className="h-3 w-3" /></button>
+                  </span>
+                )
+              })()}
               {personaFiltro !== null && (() => {
                 const pg = PERSONA_GRUPOS.find(g => g.key === personaFiltro)
                 return pg ? (
@@ -661,6 +744,100 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
                   <Bar dataKey="otro"      name="Otros"       stackId="a" fill="#6b7280" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* ── Macro categorías: barras + tabla expandible ── */}
+          {datosMacro.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="p-4 md:p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h2 className="font-semibold text-gray-800 text-sm">Egresos por macro categoría</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">{label} · {datosMacro.length} grupo{datosMacro.length !== 1 ? 's' : ''}</p>
+                </div>
+                <span className="text-xs font-semibold text-gray-500">{formatCOP(totalEgresos)}</span>
+              </div>
+
+              {/* Barras proporcionales */}
+              <div className="p-4 md:p-5 space-y-3 border-b border-gray-50">
+                {datosMacro.map((m, i) => {
+                  const pct = totalEgresos > 0 ? (m.valor / totalEgresos) * 100 : 0
+                  return (
+                    <div key={i}>
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="font-medium text-gray-700">{m.nombre}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-400">{pct.toFixed(1)}%</span>
+                          <span className="font-bold text-gray-800">{formatCOP(m.valor)}</span>
+                        </div>
+                      </div>
+                      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: m.color }} />
+                      </div>
+                      {/* Sub-categorías inline */}
+                      {m.cats.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {m.cats.slice(0, 6).map(c => (
+                            <span
+                              key={c.nombre}
+                              className="text-[10px] px-2 py-0.5 rounded-full"
+                              style={{ backgroundColor: c.color + '18', color: c.color }}
+                            >
+                              {c.nombre} · {formatCOP(c.valor)}
+                            </span>
+                          ))}
+                          {m.cats.length > 6 && <span className="text-[10px] text-gray-400">+{m.cats.length - 6} más</span>}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Tabla resumen compacta */}
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50">
+                  <tr className="text-gray-400 font-medium">
+                    <th className="text-left px-4 md:px-5 py-2.5">Macro</th>
+                    <th className="text-right px-4 md:px-5 py-2.5">Total</th>
+                    <th className="text-right px-4 md:px-5 py-2.5">%</th>
+                    <th className="text-right px-4 md:px-5 py-2.5 hidden md:table-cell">Categorías</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {datosMacro.map((m, i) => {
+                    const pct = totalEgresos > 0 ? (m.valor / totalEgresos) * 100 : 0
+                    return (
+                      <tr key={i} className={`border-t border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
+                        <td className="px-4 md:px-5 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                            <span className="font-medium text-gray-700">{m.nombre}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 md:px-5 py-2.5 text-right font-semibold text-gray-800">{formatCOP(m.valor)}</td>
+                        <td className="px-4 md:px-5 py-2.5 text-right">
+                          <span className="font-bold px-1.5 py-0.5 rounded-full text-[10px]"
+                            style={{ color: m.color, backgroundColor: m.color + '18' }}>
+                            {pct.toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="px-4 md:px-5 py-2.5 text-right text-gray-400 hidden md:table-cell">
+                          {m.cats.length} categoría{m.cats.length !== 1 ? 's' : ''}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                  <tr className="font-bold text-xs">
+                    <td className="px-4 md:px-5 py-2.5 text-gray-600">Total</td>
+                    <td className="px-4 md:px-5 py-2.5 text-right text-red-600">{formatCOP(totalEgresos)}</td>
+                    <td className="px-4 md:px-5 py-2.5 text-right text-gray-400">100%</td>
+                    <td className="hidden md:table-cell" />
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           )}
 
