@@ -17,7 +17,7 @@ export default async function EstadisticasPage() {
 
   const [{ data: txMes }, { data: cuentas }] = await Promise.all([
     supabase.from('transactions')
-      .select('tipo, monto, establecimiento, categories(nombre, color, grupo)')
+      .select('tipo, monto, fecha, establecimiento, categories(nombre, color, grupo)')
       .gte('fecha', inicio).lte('fecha', fin),
     supabase.from('accounts').select('nombre, tipo, saldo_actual').order('saldo_actual', { ascending: false }),
   ])
@@ -40,6 +40,7 @@ export default async function EstadisticasPage() {
       txMes={(txMes ?? []).map(t => ({
         tipo: t.tipo,
         monto: t.monto,
+        fecha: t.fecha,
         establecimiento: t.establecimiento ?? null,
         categories: (t.categories as unknown) as { nombre: string; color: string; grupo: string } | null,
       }))}
