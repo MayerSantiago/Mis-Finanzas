@@ -44,7 +44,9 @@ export function MovimientoForm({ open, onClose, onSaved, categorias, cuentas, ed
       defaultValues: { tipo: 'egreso', fecha: today },
     })
 
-  const tipoWatch = watch('tipo')
+  const tipoWatch       = watch('tipo')
+  const categoryIdWatch = watch('category_id')
+  const accountIdWatch  = watch('account_id')
   const categoriasFiltradas = categorias.filter(c => c.tipo === tipoWatch)
 
   useEffect(() => {
@@ -148,7 +150,10 @@ export function MovimientoForm({ open, onClose, onSaved, categorias, cuentas, ed
           {/* Categoría */}
           <div className="space-y-1.5">
             <Label>Categoría</Label>
-            <Select onValueChange={(v) => setValue('category_id', typeof v === 'string' ? v : undefined)}>
+            <Select
+              value={categoryIdWatch ?? ''}
+              onValueChange={(v) => setValue('category_id', v || undefined)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Selecciona categoría" />
               </SelectTrigger>
@@ -165,7 +170,10 @@ export function MovimientoForm({ open, onClose, onSaved, categorias, cuentas, ed
           {/* Cuenta */}
           <div className="space-y-1.5">
             <Label>Cuenta / Medio de pago</Label>
-            <Select onValueChange={(v) => setValue('account_id', typeof v === 'string' ? v : undefined)}>
+            <Select
+              value={accountIdWatch ?? ''}
+              onValueChange={(v) => setValue('account_id', v || undefined)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Selecciona cuenta" />
               </SelectTrigger>
