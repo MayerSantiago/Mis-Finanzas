@@ -8,6 +8,10 @@ import { BarrasHorizontales } from '@/components/estadisticas/barras-horizontale
 import { BarrasMensuales } from '@/components/dashboard/barras-mensuales'
 import { LineaBalance } from '@/components/estadisticas/linea-balance'
 import { Loader2, ChevronDown, X, TrendingUp, TrendingDown, Wallet, SlidersHorizontal } from 'lucide-react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend,
+} from 'recharts'
 
 type GrupoFiltro = 'todos' | 'necesidad' | 'gusto' | 'otro'
 
@@ -181,7 +185,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
   const {
     totalIngresos, totalEgresos, tasaAhorro,
     datosCat, datosGrupo, datosEstablecimiento,
-    datosChart, datosDiarios,
+    datosChart, datosDiarios, datosGrupoChart,
   } = useMemo(() => {
     const egresos  = txData.filter(t => t.tipo === 'egreso')
     const ingresos = txData.filter(t => t.tipo === 'ingreso')
@@ -266,7 +270,33 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
       datosChart = Object.entries(mapMes).sort(([a],[b]) => a.localeCompare(b)).map(([,v]) => v)
     }
 
-    return { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento, datosChart, datosDiarios }
+    // Egresos por tipo de gasto (necesidad/gusto/otro) por periodo
+    const mapGrupoChart: Record<string, { periodo: string; necesidad: number; gusto: number; otro: number; _order: string }> = {}
+    for (const t of egresosFiltrados) {
+      let key: string, periodo: string
+      if (granularity === 'dia') {
+        key = t.fecha
+        periodo = fmtLabel(t.fecha)
+      } else if (granularity === 'semana') {
+        const d = new Date(t.fecha + 'T00:00:00')
+        const diff = d.getDay() === 0 ? -6 : 1 - d.getDay()
+        const lun = new Date(d); lun.setDate(d.getDate() + diff)
+        key = fmtDate(lun)
+        periodo = `${parseInt(key.split('-')[2])} ${MESES_SHORT[lun.getMonth()]}`
+      } else {
+        const [y, m] = t.fecha.split('-')
+        key = `${y}-${m}`
+        periodo = `${MESES_SHORT[parseInt(m)-1]} ${y}`
+      }
+      if (!mapGrupoChart[key]) mapGrupoChart[key] = { periodo, necesidad: 0, gusto: 0, otro: 0, _order: key }
+      const g = (t.categories?.grupo ?? 'otro') as 'necesidad' | 'gusto' | 'otro'
+      mapGrupoChart[key][g] += t.monto
+    }
+    const datosGrupoChart = Object.values(mapGrupoChart)
+      .sort((a, b) => a._order.localeCompare(b._order))
+      .map(({ periodo, necesidad, gusto, otro }) => ({ periodo, necesidad, gusto, otro }))
+
+    return { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento, datosChart, datosDiarios, datosGrupoChart }
   }, [txData, grupo, categorias, granularity])
 
   const totalSaldos = cuentas.reduce((s, c) => s + (c.saldo_actual ?? 0), 0)
@@ -526,6 +556,51 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
               </div>
               <p className="text-xs text-gray-400 mb-4">{label}</p>
               <BarrasMensuales datos={datosChart} />
+            </div>
+          )}
+
+          {/* ── Egresos por tipo de gasto (apilado) ── */}
+          {datosGrupoChart.length > 0 && (
+            <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="font-semibold text-gray-800 text-sm">Composición de egresos</h2>
+                <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full">Por {granLabel}</span>
+              </div>
+              <p className="text-xs text-gray-400 mb-4">Necesidades · Gustos · Otros — {label}</p>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={datosGrupoChart} barSize={18} barGap={4}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="periodo" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={v => `$${(v / 1000000).toFixed(1)}M`} tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={48} />
+                  <Tooltip
+                    content={({ active, payload, label: lbl }) => {
+                      if (!active || !payload?.length) return null
+                      const total = (payload as unknown as { value: number }[]).reduce((s, p) => s + (p.value ?? 0), 0)
+                      return (
+                        <div className="bg-white border border-gray-100 shadow-lg rounded-xl px-3 py-2 text-xs space-y-1 min-w-[160px]">
+                          <p className="font-semibold text-gray-700 mb-1">{lbl}</p>
+                          {(payload as unknown as { name: string; value: number; fill: string }[]).map((p, i) => (
+                            <div key={i} className="flex items-center justify-between gap-4">
+                              <span className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: p.fill }} />
+                                <span className="text-gray-600">{p.name}</span>
+                              </span>
+                              <span className="font-semibold text-gray-800">{formatCOP(p.value)}</span>
+                            </div>
+                          ))}
+                          <div className="border-t border-gray-100 pt-1 flex justify-between font-bold text-gray-700">
+                            <span>Total</span><span>{formatCOP(total)}</span>
+                          </div>
+                        </div>
+                      )
+                    }}
+                  />
+                  <Legend formatter={v => <span className="text-xs text-gray-600">{v}</span>} iconType="circle" iconSize={8} />
+                  <Bar dataKey="necesidad" name="Necesidades" stackId="a" fill="#3b82f6" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="gusto"     name="Gustos"      stackId="a" fill="#a855f7" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="otro"      name="Otros"       stackId="a" fill="#6b7280" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
 
