@@ -742,6 +742,80 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
             </div>
           )}
 
+          {/* ── Tabla resumen por categoría ── */}
+          {datosCat.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="p-4 md:p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h2 className="font-semibold text-gray-800 text-sm">Resumen por categoría</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">Egresos · {label}</p>
+                </div>
+                <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                  {datosCat.length} categoría{datosCat.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr className="text-xs text-gray-400 font-medium">
+                      <th className="text-left px-4 md:px-5 py-3 w-8">#</th>
+                      <th className="text-left px-4 md:px-5 py-3">Categoría</th>
+                      <th className="text-right px-4 md:px-5 py-3">Valor</th>
+                      <th className="text-right px-4 md:px-5 py-3">% del total</th>
+                      <th className="px-4 md:px-5 py-3 w-28 hidden md:table-cell"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {datosCat.map((c, i) => {
+                      const pct = totalEgresos > 0 ? (c.valor / totalEgresos) * 100 : 0
+                      return (
+                        <tr key={c.nombre} className={`border-t border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
+                          <td className="px-4 md:px-5 py-2.5 text-gray-300 text-xs font-medium">{i + 1}</td>
+                          <td className="px-4 md:px-5 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                              <span className="text-gray-700 font-medium">{c.nombre}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 md:px-5 py-2.5 text-right font-semibold text-gray-800 whitespace-nowrap">
+                            {formatCOP(c.valor)}
+                          </td>
+                          <td className="px-4 md:px-5 py-2.5 text-right">
+                            <span
+                              className="inline-block text-xs font-bold px-2 py-0.5 rounded-full"
+                              style={{ color: c.color, backgroundColor: c.color + '18' }}
+                            >
+                              {pct.toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="px-4 md:px-5 py-2.5 hidden md:table-cell">
+                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden w-24">
+                              <div
+                                className="h-full rounded-full transition-all"
+                                style={{ width: `${pct}%`, backgroundColor: c.color }}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                    <tr className="font-bold text-sm">
+                      <td className="px-4 md:px-5 py-3" />
+                      <td className="px-4 md:px-5 py-3 text-gray-600">Total egresos</td>
+                      <td className="px-4 md:px-5 py-3 text-right text-red-600 whitespace-nowrap">{formatCOP(totalEgresos)}</td>
+                      <td className="px-4 md:px-5 py-3 text-right">
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">100%</span>
+                      </td>
+                      <td className="hidden md:table-cell" />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* ── Tabla detalle por día ── */}
           {datosDiarios.length > 0 && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
