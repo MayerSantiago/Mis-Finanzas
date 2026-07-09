@@ -7,7 +7,7 @@ import { DonutCategorias } from '@/components/dashboard/donut-categorias'
 import { BarrasHorizontales } from '@/components/estadisticas/barras-horizontales'
 import { BarrasMensuales } from '@/components/dashboard/barras-mensuales'
 import { LineaBalance } from '@/components/estadisticas/linea-balance'
-import { Loader2, ChevronDown, X } from 'lucide-react'
+import { Loader2, ChevronDown, X, TrendingUp, TrendingDown } from 'lucide-react'
 
 type GrupoFiltro = 'todos' | 'necesidad' | 'gusto' | 'otro'
 type Periodo = 'mes-actual' | 'mes-anterior' | '3-meses' | '6-meses' | 'año'
@@ -101,16 +101,17 @@ interface Props {
 }
 
 export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Props) {
-  const [grupo,     setGrupo]    = useState<GrupoFiltro>('todos')
-  const [categoria, setCategoria] = useState<string | null>(null)
-  const [periodo,   setPeriodo]  = useState<Periodo>('mes-actual')
-  const [txData,    setTxData]   = useState<TxRaw[]>(initialTx)
-  const [loading,   setLoading]  = useState(false)
+  const [grupo,        setGrupo]        = useState<GrupoFiltro>('todos')
+  const [categorias,   setCategorias]   = useState<string[]>([])
+  const [catExpandido, setCatExpandido] = useState(false)
+  const [periodo,      setPeriodo]      = useState<Periodo>('mes-actual')
+  const [txData,       setTxData]       = useState<TxRaw[]>(initialTx)
+  const [loading,      setLoading]      = useState(false)
 
   const { inicio, fin, label: periodoLabel, dias, multiMes } = useMemo(() => getRango(periodo), [periodo])
 
   useEffect(() => {
-    setCategoria(null) // resetear categoría al cambiar periodo
+    setCategorias([])
     if (periodo === 'mes-actual') {
       setTxData(initialTx)
       return
@@ -139,18 +140,23 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
     return () => { cancelled = true }
   }, [periodo, inicio, fin, initialTx])
 
-  // Categorías disponibles según el periodo y grupo activo
+  // Categorías disponibles según periodo + grupo activo
   const categoriasDisponibles = useMemo(() => {
     const seen = new Map<string, { nombre: string; color: string }>()
     for (const t of txData) {
       if (t.tipo !== 'egreso' || !t.categories?.nombre) continue
       if (grupo !== 'todos' && (t.categories.grupo ?? 'otro') !== grupo) continue
-      if (!seen.has(t.categories.nombre)) {
+      if (!seen.has(t.categories.nombre))
         seen.set(t.categories.nombre, { nombre: t.categories.nombre, color: t.categories.color })
-      }
     }
     return Array.from(seen.values()).sort((a, b) => a.nombre.localeCompare(b.nombre))
   }, [txData, grupo])
+
+  function toggleCategoria(nombre: string) {
+    setCategorias(prev =>
+      prev.includes(nombre) ? prev.filter(c => c !== nombre) : [...prev, nombre]
+    )
+  }
 
   const { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento, datosMensuales } =
     useMemo(() => {
@@ -159,7 +165,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
 
       const egresosFiltrados = egresos.filter(t => {
         const matchGrupo = grupo === 'todos' || (t.categories?.grupo ?? 'otro') === grupo
-        const matchCat   = !categoria || t.categories?.nombre === categoria
+        const matchCat   = categorias.length === 0 || categorias.includes(t.categories?.nombre ?? '')
         return matchGrupo && matchCat
       })
 
@@ -204,7 +210,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
         .slice(0, 10)
         .map(([nombre, valor], i) => ({ nombre, valor, color: COLORES_EST[i % COLORES_EST.length] }))
 
-      // Ingresos vs egresos por mes (para periodos multi-mes)
+      // Por mes
       const mapMes: Record<string, { mes: string; ingresos: number; egresos: number }> = {}
       for (const t of txData) {
         const [y, m] = t.fecha.split('-')
@@ -215,7 +221,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
           mapMes[key].ingresos += t.monto
         } else {
           const matchGrupo = grupo === 'todos' || (t.categories?.grupo ?? 'otro') === grupo
-          const matchCat   = !categoria || t.categories?.nombre === categoria
+          const matchCat   = categorias.length === 0 || categorias.includes(t.categories?.nombre ?? '')
           if (matchGrupo && matchCat) mapMes[key].egresos += t.monto
         }
       }
@@ -224,11 +230,11 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
         .map(([, v]) => v)
 
       return { totalIngresos, totalEgresos, tasaAhorro, datosCat, datosGrupo, datosEstablecimiento, datosMensuales }
-    }, [txData, grupo, categoria])
+    }, [txData, grupo, categorias])
 
   const totalSaldos = cuentas.reduce((s, c) => s + (c.saldo_actual ?? 0), 0)
   const grupoLabel  = GRUPOS.find(g => g.key === grupo)?.label ?? ''
-  const hayFiltros  = grupo !== 'todos' || !!categoria
+  const hayFiltros  = grupo !== 'todos' || categorias.length > 0
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-5">
@@ -237,9 +243,8 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
         <p className="text-sm text-gray-500 capitalize">{periodoLabel}</p>
       </div>
 
-      {/* ── Filtros ── */}
-      {/* Periodo */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
+      {/* ── Periodo ── */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {PERIODOS.map(p => (
           <button
             key={p.key}
@@ -255,12 +260,12 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
         ))}
       </div>
 
-      {/* Grupo */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
+      {/* ── Grupo ── */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {GRUPOS.map(g => (
           <button
             key={g.key}
-            onClick={() => { setGrupo(g.key); setCategoria(null) }}
+            onClick={() => { setGrupo(g.key); setCategorias([]) }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors border ${
               grupo === g.key
                 ? 'bg-emerald-600 text-white border-emerald-600'
@@ -273,22 +278,68 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
         ))}
       </div>
 
-      {/* Categoría */}
-      <div className="relative">
-        <select
-          value={categoria ?? ''}
-          onChange={e => setCategoria(e.target.value || null)}
-          className="w-full appearance-none bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-emerald-400 pr-10 cursor-pointer"
+      {/* ── Categorías multi-select ── */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <button
+          onClick={() => setCatExpandido(!catExpandido)}
+          className="w-full flex items-center justify-between px-4 py-2.5 text-sm"
         >
-          <option value="">Todas las categorías</option>
-          {categoriasDisponibles.map(cat => (
-            <option key={cat.nombre} value={cat.nombre}>{cat.nombre}</option>
-          ))}
-        </select>
-        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+          <span className="text-gray-700 font-medium">
+            Categorías{' '}
+            {categorias.length > 0 && (
+              <span className="text-emerald-600">({categorias.length} seleccionada{categorias.length !== 1 ? 's' : ''})</span>
+            )}
+          </span>
+          <div className="flex items-center gap-3">
+            {categorias.length > 0 && (
+              <span
+                role="button"
+                onClick={e => { e.stopPropagation(); setCategorias([]) }}
+                className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+              >
+                Limpiar
+              </span>
+            )}
+            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${catExpandido ? 'rotate-180' : ''}`} />
+          </div>
+        </button>
+
+        {catExpandido && (
+          <div className="px-3 pb-3 border-t border-gray-100">
+            {categoriasDisponibles.length === 0 ? (
+              <p className="text-xs text-gray-400 py-3 text-center">
+                Sin categorías con datos en este periodo
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2 pt-3">
+                {categoriasDisponibles.map(cat => {
+                  const selected = categorias.includes(cat.nombre)
+                  return (
+                    <button
+                      key={cat.nombre}
+                      onClick={() => toggleCategoria(cat.nombre)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                        selected
+                          ? 'text-white border-transparent shadow-sm'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={selected ? { backgroundColor: cat.color, borderColor: cat.color } : {}}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0 transition-colors"
+                        style={{ backgroundColor: selected ? 'rgba(255,255,255,0.8)' : cat.color }}
+                      />
+                      {cat.nombre}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Badge de filtros activos */}
+      {/* Badges de filtros activos */}
       {hayFiltros && (
         <div className="flex flex-wrap gap-2">
           {grupo !== 'todos' && (
@@ -297,12 +348,12 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
               <button onClick={() => setGrupo('todos')}><X className="h-3 w-3" /></button>
             </span>
           )}
-          {categoria && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-xs rounded-full border border-blue-200">
-              {categoria}
-              <button onClick={() => setCategoria(null)}><X className="h-3 w-3" /></button>
+          {categorias.map(cat => (
+            <span key={cat} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-xs rounded-full border border-blue-200">
+              {cat}
+              <button onClick={() => toggleCategoria(cat)}><X className="h-3 w-3" /></button>
             </span>
-          )}
+          ))}
         </div>
       )}
 
@@ -313,37 +364,49 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
         </div>
       )}
 
-      {/* ── KPIs ── */}
+      {/* ── KPIs 2×2 ── */}
       <div className="grid grid-cols-2 gap-3">
+        <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
+            <p className="text-xs text-emerald-600 font-medium">Ingresos</p>
+          </div>
+          <p className="text-xl font-bold text-emerald-700">{formatCOP(totalIngresos)}</p>
+        </div>
+        <div className="bg-red-50 rounded-2xl p-4 border border-red-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <TrendingDown className="h-3.5 w-3.5 text-red-500" />
+            <p className="text-xs text-red-500 font-medium">Egresos{hayFiltros ? ' (filtrado)' : ''}</p>
+          </div>
+          <p className="text-xl font-bold text-red-600">{formatCOP(totalEgresos)}</p>
+        </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-          <p className="text-xs text-gray-400">
-            {grupo === 'todos' && !categoria ? 'Tasa de ahorro' : `Ahorro vs filtro`}
-          </p>
-          <p className={`text-2xl font-bold mt-1 ${tasaAhorro >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+          <p className="text-xs text-gray-400">Tasa de ahorro</p>
+          <p className={`text-xl font-bold mt-1 ${tasaAhorro >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
             {tasaAhorro.toFixed(1)}%
           </p>
-          <p className="text-xs text-gray-400 mt-1">de los ingresos</p>
+          <p className="text-xs text-gray-400 mt-0.5">de los ingresos</p>
         </div>
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <p className="text-xs text-gray-400">Gasto/día</p>
-          <p className="text-2xl font-bold mt-1 text-gray-800">{formatCOP(totalEgresos / dias)}</p>
-          <p className="text-xs text-gray-400 mt-1">{dias} días · {formatCOP(totalEgresos)} total</p>
+          <p className="text-xl font-bold text-gray-800 mt-1">{formatCOP(totalEgresos / dias)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{dias} días</p>
         </div>
       </div>
 
-      {/* ── Ingreso vs Egreso por mes (solo multi-mes) ── */}
+      {/* ── Ingreso vs Egreso por mes ── */}
       {multiMes && datosMensuales.length > 0 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-800 text-sm mb-1">Ingreso vs Egreso por mes</h2>
           <p className="text-xs text-gray-400 mb-3 capitalize">
-            {periodoLabel}{hayFiltros ? ` · filtrado` : ''}
+            {periodoLabel}{hayFiltros ? ' · filtrado' : ''}
           </p>
           <BarrasMensuales datos={datosMensuales} />
         </div>
       )}
 
-      {/* ── Necesidades vs Gustos (solo cuando no hay filtro de categoría específica) ── */}
-      {!categoria && grupo === 'todos' && datosGrupo.length > 0 && (
+      {/* ── Necesidades vs Gustos ── */}
+      {categorias.length === 0 && grupo === 'todos' && datosGrupo.length > 0 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-800 text-sm mb-1">Necesidades vs Gustos</h2>
           <p className="text-xs text-gray-400 mb-4 capitalize">{periodoLabel}</p>
@@ -371,7 +434,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
         </div>
       )}
 
-      {/* ── Dona de distribución (solo si hay más de 1 categoría) ── */}
+      {/* ── Dona de distribución ── */}
       {datosCat.length > 1 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-800 text-sm mb-1">Distribución de egresos</h2>
@@ -382,7 +445,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
       {/* ── Por establecimiento ── */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
         <h2 className="font-semibold text-gray-800 text-sm mb-1">Por establecimiento</h2>
-        <p className="text-xs text-gray-400 mb-4 capitalize">Dónde más gastas · {periodoLabel}</p>
+        <p className="text-xs text-gray-400 mb-4">Dónde más gastas · <span className="capitalize">{periodoLabel}</span></p>
         {datosEstablecimiento.length === 0 ? (
           <p className="text-center text-sm text-gray-400 py-6">Sin establecimientos registrados</p>
         ) : (
@@ -403,7 +466,7 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
         )}
       </div>
 
-      {/* ── Tendencia de balance (siempre últimos 6 meses, sin filtrar) ── */}
+      {/* ── Tendencia del balance ── */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
         <h2 className="font-semibold text-gray-800 text-sm mb-1">Tendencia del balance</h2>
         <p className="text-xs text-gray-400 mb-3">Últimos 6 meses</p>
