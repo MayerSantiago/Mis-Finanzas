@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { formatCOP } from '@/lib/format'
-import type { Transaccion, Categoria, Cuenta, TipoMovimiento, PersonaGrupo } from '@/types'
+import type { Transaccion, Categoria, Cuenta, TipoMovimiento, PersonaGrupo, MacroCategoria } from '@/types'
 import { PERSONA_GRUPOS } from '@/types'
 import { MovimientoForm } from './movimiento-form'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Plus, Pencil, Trash2, TrendingUp, TrendingDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 
 interface Props {
   transacciones: Transaccion[]
@@ -43,6 +46,8 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
   const [filtradas, setFiltradas] = useState(initial)
   const [filtroTipo,    setFiltroTipo]    = useState<TipoMovimiento | 'todos'>('todos')
   const [filtroPersona, setFiltroPersona] = useState<PersonaGrupo | 'todos'>('todos')
+  const [filtroMacro,   setFiltroMacro]   = useState<string>('todos')
+  const [filtroCat,     setFiltroCat]     = useState<string>('todos')
   const [formOpen, setFormOpen] = useState(false)
   const [editando, setEditando] = useState<Transaccion | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -55,7 +60,26 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
     }
   }, [searchParams])
 
-  // Filtrar por mes y tipo
+  // Macros únicas disponibles en las categorías
+  const macrosUnicas = useMemo(() => {
+    const seen = new Map<string, MacroCategoria>()
+    for (const c of categorias) {
+      const mc = c.macro_categories as MacroCategoria | null | undefined
+      if (mc && !seen.has(mc.id)) seen.set(mc.id, mc)
+    }
+    return Array.from(seen.values()).sort((a, b) => a.nombre.localeCompare(b.nombre))
+  }, [categorias])
+
+  // Categorías filtradas según la macro seleccionada
+  const catsFiltradas = useMemo(() => {
+    if (filtroMacro === 'todos') return categorias
+    return categorias.filter(c => {
+      const mc = c.macro_categories as MacroCategoria | null | undefined
+      return mc?.id === filtroMacro
+    })
+  }, [categorias, filtroMacro])
+
+  // Filtrar por mes, tipo, persona, macro y categoría
   useEffect(() => {
     let list = transacciones.filter(t => {
       const [a, m] = t.fecha.split('-').map(Number)
@@ -64,8 +88,17 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
 
     if (filtroTipo    !== 'todos') list = list.filter(t => t.tipo === filtroTipo)
     if (filtroPersona !== 'todos') list = list.filter(t => t.persona_grupo === filtroPersona)
+    if (filtroMacro   !== 'todos') list = list.filter(t => {
+      const cat = t.categories as Categoria | null
+      const mc = cat?.macro_categories as MacroCategoria | null | undefined
+      return mc?.id === filtroMacro
+    })
+    if (filtroCat !== 'todos') list = list.filter(t => {
+      const cat = t.categories as Categoria | null
+      return cat?.id === filtroCat
+    })
     setFiltradas(list.sort((a, b) => b.fecha.localeCompare(a.fecha)))
-  }, [transacciones, anio, mes, filtroTipo, filtroPersona])
+  }, [transacciones, anio, mes, filtroTipo, filtroPersona, filtroMacro, filtroCat])
 
   // Cargar mes nuevo desde Supabase cuando cambia el mes
   const cargarMes = useCallback(async (a: number, m: number) => {
@@ -74,11 +107,16 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
     const fin = new Date(a, m + 1, 0).toISOString().split('T')[0]
     const { data } = await supabase
       .from('transactions')
-      .select('*, categories(*), accounts(*)')
+      .select('*, categories(*, macro_categories(*)), accounts(*)')
       .gte('fecha', inicio).lte('fecha', fin)
       .order('fecha', { ascending: false })
     if (data) setTransacciones(data as Transaccion[])
   }, [])
+
+  function cambiarMacro(val: string) {
+    setFiltroMacro(val)
+    setFiltroCat('todos')
+  }
 
   function cambiarMes(delta: number) {
     setMes(prev => {
@@ -173,6 +211,39 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
           </button>
         ))}
       </div>
+
+      {/* Filtros macro + categoría */}
+      {macrosUnicas.length > 0 && (
+        <div className="flex gap-2 mb-2 flex-wrap">
+          <Select value={filtroMacro} onValueChange={cambiarMacro}>
+            <SelectTrigger className="h-8 text-xs rounded-full px-3 w-auto min-w-[130px] bg-white border-gray-200">
+              <SelectValue placeholder="Macro categoría" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todas las macros</SelectItem>
+              {macrosUnicas.map(mc => (
+                <SelectItem key={mc.id} value={mc.id}>
+                  {mc.icono ? `${mc.icono} ${mc.nombre}` : mc.nombre}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filtroCat} onValueChange={setFiltroCat}>
+            <SelectTrigger className="h-8 text-xs rounded-full px-3 w-auto min-w-[130px] bg-white border-gray-200">
+              <SelectValue placeholder="Categoría" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todas las categorías</SelectItem>
+              {catsFiltradas.map(c => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.icono ? `${c.icono} ${c.nombre}` : c.nombre}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* Filtro persona */}
       <div className="flex gap-2 mb-4 flex-wrap">

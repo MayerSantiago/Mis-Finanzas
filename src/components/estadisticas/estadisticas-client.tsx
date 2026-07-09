@@ -690,6 +690,85 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
             </div>
           )}
 
+          {/* ── Macro categorías: barras + tabla expandible ── */}
+          {datosMacro.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="p-4 md:p-5 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h2 className="font-semibold text-gray-800 text-sm">Egresos por macro categoría</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">{label} · {datosMacro.length} grupo{datosMacro.length !== 1 ? 's' : ''}</p>
+                </div>
+                <span className="text-xs font-semibold text-gray-500">{formatCOP(totalEgresos)}</span>
+              </div>
+
+              {/* Barras proporcionales */}
+              <div className="p-4 md:p-5 space-y-3 border-b border-gray-50">
+                {datosMacro.map((m, i) => {
+                  const pct = totalEgresos > 0 ? (m.valor / totalEgresos) * 100 : 0
+                  return (
+                    <div key={i}>
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="font-medium text-gray-700">{m.nombre}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-400">{pct.toFixed(1)}%</span>
+                          <span className="font-bold text-gray-800">{formatCOP(m.valor)}</span>
+                        </div>
+                      </div>
+                      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: m.color }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Tabla resumen compacta */}
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50">
+                  <tr className="text-gray-400 font-medium">
+                    <th className="text-left px-4 md:px-5 py-2.5">Macro</th>
+                    <th className="text-right px-4 md:px-5 py-2.5">Total</th>
+                    <th className="text-right px-4 md:px-5 py-2.5">%</th>
+                    <th className="text-right px-4 md:px-5 py-2.5 hidden md:table-cell">Categorías</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {datosMacro.map((m, i) => {
+                    const pct = totalEgresos > 0 ? (m.valor / totalEgresos) * 100 : 0
+                    return (
+                      <tr key={i} className={`border-t border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
+                        <td className="px-4 md:px-5 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                            <span className="font-medium text-gray-700">{m.nombre}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 md:px-5 py-2.5 text-right font-semibold text-gray-800">{formatCOP(m.valor)}</td>
+                        <td className="px-4 md:px-5 py-2.5 text-right">
+                          <span className="font-bold px-1.5 py-0.5 rounded-full text-[10px]"
+                            style={{ color: m.color, backgroundColor: m.color + '18' }}>
+                            {pct.toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="px-4 md:px-5 py-2.5 text-right text-gray-400 hidden md:table-cell">
+                          {m.cats.length} categoría{m.cats.length !== 1 ? 's' : ''}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                  <tr className="font-bold text-xs">
+                    <td className="px-4 md:px-5 py-2.5 text-gray-600">Total</td>
+                    <td className="px-4 md:px-5 py-2.5 text-right text-red-600">{formatCOP(totalEgresos)}</td>
+                    <td className="px-4 md:px-5 py-2.5 text-right text-gray-400">100%</td>
+                    <td className="hidden md:table-cell" />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
           {/* ── Chart ingresos vs egresos (granularidad automática) ── */}
           {datosChart.length > 0 && (
             <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm border border-gray-100">
@@ -744,100 +823,6 @@ export function EstadisticasClient({ txMes: initialTx, datosMeses, cuentas }: Pr
                   <Bar dataKey="otro"      name="Otros"       stackId="a" fill="#6b7280" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* ── Macro categorías: barras + tabla expandible ── */}
-          {datosMacro.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-4 md:p-5 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                  <h2 className="font-semibold text-gray-800 text-sm">Egresos por macro categoría</h2>
-                  <p className="text-xs text-gray-400 mt-0.5">{label} · {datosMacro.length} grupo{datosMacro.length !== 1 ? 's' : ''}</p>
-                </div>
-                <span className="text-xs font-semibold text-gray-500">{formatCOP(totalEgresos)}</span>
-              </div>
-
-              {/* Barras proporcionales */}
-              <div className="p-4 md:p-5 space-y-3 border-b border-gray-50">
-                {datosMacro.map((m, i) => {
-                  const pct = totalEgresos > 0 ? (m.valor / totalEgresos) * 100 : 0
-                  return (
-                    <div key={i}>
-                      <div className="flex items-center justify-between text-xs mb-1.5">
-                        <span className="font-medium text-gray-700">{m.nombre}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400">{pct.toFixed(1)}%</span>
-                          <span className="font-bold text-gray-800">{formatCOP(m.valor)}</span>
-                        </div>
-                      </div>
-                      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: m.color }} />
-                      </div>
-                      {/* Sub-categorías inline */}
-                      {m.cats.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {m.cats.slice(0, 6).map(c => (
-                            <span
-                              key={c.nombre}
-                              className="text-[10px] px-2 py-0.5 rounded-full"
-                              style={{ backgroundColor: c.color + '18', color: c.color }}
-                            >
-                              {c.nombre} · {formatCOP(c.valor)}
-                            </span>
-                          ))}
-                          {m.cats.length > 6 && <span className="text-[10px] text-gray-400">+{m.cats.length - 6} más</span>}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Tabla resumen compacta */}
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50">
-                  <tr className="text-gray-400 font-medium">
-                    <th className="text-left px-4 md:px-5 py-2.5">Macro</th>
-                    <th className="text-right px-4 md:px-5 py-2.5">Total</th>
-                    <th className="text-right px-4 md:px-5 py-2.5">%</th>
-                    <th className="text-right px-4 md:px-5 py-2.5 hidden md:table-cell">Categorías</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {datosMacro.map((m, i) => {
-                    const pct = totalEgresos > 0 ? (m.valor / totalEgresos) * 100 : 0
-                    return (
-                      <tr key={i} className={`border-t border-gray-50 ${i % 2 === 0 ? '' : 'bg-gray-50/40'}`}>
-                        <td className="px-4 md:px-5 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
-                            <span className="font-medium text-gray-700">{m.nombre}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 md:px-5 py-2.5 text-right font-semibold text-gray-800">{formatCOP(m.valor)}</td>
-                        <td className="px-4 md:px-5 py-2.5 text-right">
-                          <span className="font-bold px-1.5 py-0.5 rounded-full text-[10px]"
-                            style={{ color: m.color, backgroundColor: m.color + '18' }}>
-                            {pct.toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="px-4 md:px-5 py-2.5 text-right text-gray-400 hidden md:table-cell">
-                          {m.cats.length} categoría{m.cats.length !== 1 ? 's' : ''}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-                <tfoot className="bg-gray-50 border-t-2 border-gray-200">
-                  <tr className="font-bold text-xs">
-                    <td className="px-4 md:px-5 py-2.5 text-gray-600">Total</td>
-                    <td className="px-4 md:px-5 py-2.5 text-right text-red-600">{formatCOP(totalEgresos)}</td>
-                    <td className="px-4 md:px-5 py-2.5 text-right text-gray-400">100%</td>
-                    <td className="hidden md:table-cell" />
-                  </tr>
-                </tfoot>
-              </table>
             </div>
           )}
 

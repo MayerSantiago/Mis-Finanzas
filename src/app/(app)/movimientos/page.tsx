@@ -12,10 +12,10 @@ async function MovimientosContent() {
   const [{ data: transacciones }, { data: categorias }, { data: cuentas }] = await Promise.all([
     supabase
       .from('transactions')
-      .select('*, categories(*), accounts(*)')
+      .select('*, categories(*, macro_categories(*)), accounts(*)')
       .gte('fecha', inicio).lte('fecha', fin)
       .order('fecha', { ascending: false }),
-    supabase.from('categories').select('*').order('nombre'),
+    supabase.from('categories').select('*, macro_categories(*)').order('nombre'),
     supabase.from('accounts').select('*').order('nombre'),
   ])
 
