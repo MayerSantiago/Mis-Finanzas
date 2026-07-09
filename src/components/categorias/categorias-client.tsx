@@ -57,12 +57,15 @@ export function CategoriasClient({ categorias: initialCats, macroCategorias: ini
   const [catLoading,   setCatLoading]   = useState(false)
   const [tabActivo,    setTabActivo]    = useState<string>('egreso')
 
+  const [catError,     setCatError]     = useState('')
+
   // ── Estado macro categorías ──
   const [macros,       setMacros]       = useState(initialMacro)
   const [macroOpen,    setMacroOpen]    = useState(false)
   const [macroDeleteId,setMacroDeleteId]= useState<string | null>(null)
   const [editandoMacro,setEditandoMacro]= useState<MacroCategoria | null>(null)
   const [macroLoading, setMacroLoading] = useState(false)
+  const [macroError,   setMacroError]   = useState('')
 
   // ── Form categoría ──
   const catForm = useForm<CategoriaForm>({
@@ -103,6 +106,7 @@ export function CategoriasClient({ categorias: initialCats, macroCategorias: ini
 
   async function onSubmitCat(data: CategoriaForm) {
     setCatLoading(true)
+    setCatError('')
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setCatLoading(false); return }
@@ -121,12 +125,14 @@ export function CategoriasClient({ categorias: initialCats, macroCategorias: ini
       const { data: updated, error } = await supabase
         .from('categories').update(payload).eq('id', editandoCat.id)
         .select('*, macro_categories(*)').single()
-      if (!error && updated) setCategorias(prev => prev.map(c => c.id === editandoCat.id ? updated as Categoria : c))
+      if (error) { setCatError(error.message); setCatLoading(false); return }
+      if (updated) setCategorias(prev => prev.map(c => c.id === editandoCat.id ? updated as Categoria : c))
     } else {
       const { data: created, error } = await supabase
         .from('categories').insert(payload)
         .select('*, macro_categories(*)').single()
-      if (!error && created) setCategorias(prev => [...prev, created as Categoria])
+      if (error) { setCatError(error.message); setCatLoading(false); return }
+      if (created) setCategorias(prev => [...prev, created as Categoria])
     }
     setCatLoading(false)
     setCatOpen(false)
@@ -159,6 +165,7 @@ export function CategoriasClient({ categorias: initialCats, macroCategorias: ini
 
   async function onSubmitMacro(data: MacroForm) {
     setMacroLoading(true)
+    setMacroError('')
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setMacroLoading(false); return }
@@ -173,11 +180,13 @@ export function CategoriasClient({ categorias: initialCats, macroCategorias: ini
     if (editandoMacro) {
       const { data: updated, error } = await supabase
         .from('macro_categories').update(payload).eq('id', editandoMacro.id).select().single()
-      if (!error && updated) setMacros(prev => prev.map(m => m.id === editandoMacro.id ? updated as MacroCategoria : m))
+      if (error) { setMacroError(error.message); setMacroLoading(false); return }
+      if (updated) setMacros(prev => prev.map(m => m.id === editandoMacro.id ? updated as MacroCategoria : m))
     } else {
       const { data: created, error } = await supabase
         .from('macro_categories').insert(payload).select().single()
-      if (!error && created) setMacros(prev => [...prev, created as MacroCategoria])
+      if (error) { setMacroError(error.message); setMacroLoading(false); return }
+      if (created) setMacros(prev => [...prev, created as MacroCategoria])
     }
     setMacroLoading(false)
     setMacroOpen(false)
@@ -381,7 +390,7 @@ export function CategoriasClient({ categorias: initialCats, macroCategorias: ini
       </Tabs>
 
       {/* ── Modal crear / editar categoría ── */}
-      <Dialog open={catOpen} onOpenChange={setCatOpen}>
+      <Dialog open={catOpen} onOpenChange={v => { setCatOpen(v); if (!v) setCatError('') }}>
         <DialogContent className="max-w-sm mx-auto max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editandoCat ? 'Editar categoría' : 'Nueva categoría'}</DialogTitle>
@@ -458,6 +467,9 @@ export function CategoriasClient({ categorias: initialCats, macroCategorias: ini
               </div>
             </div>
 
+            {catError && (
+              <div className="bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg p-3">{catError}</div>
+            )}
             <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setCatOpen(false)}>Cancelar</Button>
               <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={catLoading}>
@@ -469,7 +481,7 @@ export function CategoriasClient({ categorias: initialCats, macroCategorias: ini
       </Dialog>
 
       {/* ── Modal crear / editar macro categoría ── */}
-      <Dialog open={macroOpen} onOpenChange={setMacroOpen}>
+      <Dialog open={macroOpen} onOpenChange={v => { setMacroOpen(v); if (!v) setMacroError('') }}>
         <DialogContent className="max-w-sm mx-auto">
           <DialogHeader>
             <DialogTitle>{editandoMacro ? 'Editar macro categoría' : 'Nueva macro categoría'}</DialogTitle>
@@ -501,6 +513,9 @@ export function CategoriasClient({ categorias: initialCats, macroCategorias: ini
               </div>
             </div>
 
+            {macroError && (
+              <div className="bg-red-50 border border-red-200 text-red-600 text-xs rounded-lg p-3">{macroError}</div>
+            )}
             <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setMacroOpen(false)}>Cancelar</Button>
               <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={macroLoading}>
