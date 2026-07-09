@@ -113,8 +113,8 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
     if (data) setTransacciones(data as Transaccion[])
   }, [])
 
-  function cambiarMacro(val: string) {
-    setFiltroMacro(val)
+  function cambiarMacro(val: string | null) {
+    setFiltroMacro(val ?? 'todos')
     setFiltroCat('todos')
   }
 
@@ -229,7 +229,7 @@ export function MovimientosClient({ transacciones: initial, categorias, cuentas 
             </SelectContent>
           </Select>
 
-          <Select value={filtroCat} onValueChange={setFiltroCat}>
+          <Select value={filtroCat} onValueChange={val => setFiltroCat(val ?? 'todos')}>
             <SelectTrigger className="h-8 text-xs rounded-full px-3 w-auto min-w-[130px] bg-white border-gray-200">
               <SelectValue placeholder="Categoría" />
             </SelectTrigger>
