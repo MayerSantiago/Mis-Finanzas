@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { TrendingUp, Loader2 } from 'lucide-react'
+import { TrendingUp, Loader2, Mail, CheckCircle2 } from 'lucide-react'
 
 const registerSchema = z.object({
   nombre: z.string().min(2, 'El nombre debe tener al menos 2 caracteres'),
@@ -69,20 +69,39 @@ export default function RegisterPage() {
   if (success) {
     return (
       <Card className="w-full max-w-md shadow-xl text-center">
-        <CardHeader>
-          <div className="flex justify-center mb-3">
-            <div className="bg-emerald-600 p-3 rounded-2xl">
-              <TrendingUp className="h-7 w-7 text-white" />
+        <CardHeader className="pb-2">
+          <div className="flex justify-center mb-4">
+            <div className="relative">
+              <div className="bg-emerald-100 p-5 rounded-full">
+                <Mail className="h-10 w-10 text-emerald-600" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-emerald-600 rounded-full p-0.5">
+                <CheckCircle2 className="h-5 w-5 text-white" />
+              </div>
             </div>
           </div>
-          <CardTitle className="text-xl">¡Revisa tu correo!</CardTitle>
-          <CardDescription>
-            Te enviamos un enlace de confirmación. Haz clic en él para activar tu cuenta.
+          <CardTitle className="text-2xl font-bold">¡Cuenta creada!</CardTitle>
+          <CardDescription className="text-base mt-1">
+            Revisa tu correo electrónico para confirmar tu cuenta.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-left space-y-2">
+            <p className="text-sm font-semibold text-emerald-800">¿Qué debes hacer?</p>
+            <ol className="text-sm text-emerald-700 space-y-1 list-decimal list-inside">
+              <li>Abre tu bandeja de entrada</li>
+              <li>Busca un correo de <span className="font-medium">Mis Finanzas</span></li>
+              <li>Haz clic en el enlace de confirmación</li>
+              <li>Regresa aquí e inicia sesión</li>
+            </ol>
+          </div>
+          <p className="text-xs text-gray-400">
+            ¿No ves el correo? Revisa tu carpeta de <span className="font-medium">spam</span> o correo no deseado.
+          </p>
           <Link href="/login">
-            <Button variant="outline" className="w-full">Volver al inicio de sesión</Button>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
+              Ir a iniciar sesión
+            </Button>
           </Link>
         </CardContent>
       </Card>
@@ -136,6 +155,11 @@ export default function RegisterPage() {
           <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700" disabled={isSubmitting}>
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Crear cuenta'}
           </Button>
+
+          <p className="flex items-center justify-center gap-1.5 text-xs text-gray-400 text-center">
+            <Mail className="h-3.5 w-3.5 shrink-0" />
+            Te enviaremos un correo para confirmar tu cuenta antes de ingresar.
+          </p>
         </form>
       </CardContent>
 
